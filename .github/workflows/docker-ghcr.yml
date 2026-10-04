@@ -1,0 +1,162 @@
+name: Build and push Docker image
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Docker image tag/version (for example 2024.9.10-r1)
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  GO_VERSION: "1.24.1"
+  NODE_VERSION: "22"
+  SASS_VERSION: "1.85.1"
+  IMAGE_NAME: ghcr.io/${{ github.repository }}
+
+jobs:
+  build-and-push:
+    name: Build source and push GHCR image
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Validate version
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [[ ! "$INPUT_VERSION" =~ ^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$ ]]; then
+            echo "Invalid Docker tag/version: $INPUT_VERSION" >&2
+            exit 1
+          fi
+
+          echo "VERSION=$INPUT_VERSION" >> "$GITHUB_ENV"
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+          cache-dependency-path: server/go.sum
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: yarn
+          cache-dependency-path: "**/yarn.lock"
+
+      - name: Install Yarn
+        run: npm install --global yarn@1.22.22
+
+      - name: Build server web console
+        working-directory: server/webconsole
+        run: |
+          yarn install --non-interactive
+          yarn build
+
+      - name: Build Corteza server
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          cp *.md DCO LICENSE server/
+
+          (
+            cd server/pkg/locale
+            make src/en src/de src/fr
+          )
+
+          rm -rf server/build/pkg/corteza-server
+          make -C server \
+            BUILD_VERSION="$VERSION" \
+            BUILD_OS=linux \
+            BUILD_ARCH=amd64 \
+            release-clean release
+
+      - name: Build web clients
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          for app in admin compose discovery privacy reporter one workflow; do
+            echo "::group::Build web client: $app"
+            (
+              cd "client/web/$app"
+              make dep
+              make BUILD_VERSION="$VERSION" build
+            )
+            echo "::endgroup::"
+          done
+
+      - name: Assemble all-in-one webapp
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          rm -rf client/web/dist
+          mkdir -p client/web/dist
+          cp -a client/web/one/dist/. client/web/dist/
+
+          for app in admin compose discovery privacy reporter workflow; do
+            mkdir -p "client/web/dist/$app"
+            cp -a "client/web/$app/dist/." "client/web/dist/$app/"
+          done
+
+      - name: Prepare minimal Docker build context
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          rm -rf .docker-ci
+          mkdir -p .docker-ci/corteza/webapp
+
+          cp -a server/build/pkg/corteza-server/. .docker-ci/corteza/
+          cp -a client/web/dist/. .docker-ci/corteza/webapp/
+          cp .github/docker/corteza-aio.Dockerfile .docker-ci/Dockerfile
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push image
+        uses: docker/build-push-action@v6
+        with:
+          context: .docker-ci
+          file: .docker-ci/Dockerfile
+          push: true
+          platforms: linux/amd64
+          tags: ${{ env.IMAGE_NAME }}:${{ env.VERSION }}
+          build-args: |
+            VERSION=${{ env.VERSION }}
+            REVISION=${{ github.sha }}
+            SASS_VERSION=${{ env.SASS_VERSION }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Publish summary
+        shell: bash
+        run: |
+          {
+            echo "### Docker image published"
+            echo
+            echo "- Image: \`$IMAGE_NAME:$VERSION\`"
+            echo "- Source ref: \`${GITHUB_REF_NAME}\`"
+            echo "- Source commit: \`${GITHUB_SHA}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
