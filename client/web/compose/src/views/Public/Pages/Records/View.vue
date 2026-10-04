@@ -793,90 +793,90 @@ export default {
     },
 
     layoutActionKey (action, index) {
-  const actionID = String((action || {}).actionID || '')
-  return actionID && actionID !== NoID ? actionID : String(index)
-},
+    const actionID = String((action || {}).actionID || '')
+    return actionID && actionID !== NoID ? actionID : String(index)
+  },
 
-isLayoutActionProcessing (action, index) {
-  return this.processingLayoutActions.includes(this.layoutActionKey(action, index))
-},
+  isLayoutActionProcessing (action, index) {
+    return this.processingLayoutActions.includes(this.layoutActionKey(action, index))
+  },
 
-async evaluateLayoutActionExpressions () {
-  const actions = (((this.layout || {}).config || {}).actions || [])
-  const expressions = {}
+  async evaluateLayoutActionExpressions () {
+    const actions = (((this.layout || {}).config || {}).actions || [])
+    const expressions = {}
 
-  actions.forEach((action, index) => {
-    if (!action.enabled) return
+    actions.forEach((action, index) => {
+      if (!action.enabled) return
 
-    const visibility = String(((action.params || {}).visibility) || '').trim()
-    if (!visibility) return
+      const visibility = String(((action.params || {}).visibility) || '').trim()
+      if (!visibility) return
 
-    expressions[this.layoutActionKey(action, index)] = visibility
-  })
-
-  if (Object.keys(expressions).length === 0) {
-    this.layoutActionVisibility = {}
-    return
-  }
-
-  try {
-    this.layoutActionVisibility = await this.$SystemAPI.expressionEvaluate({
-      variables: this.expressionVariables(),
-      expressions,
-    }) || {}
-  } catch (e) {
-    this.layoutActionVisibility = Object.keys(expressions).reduce((out, key) => {
-      out[key] = false
-      return out
-    }, {})
-    this.toastErrorHandler(this.$t('notification:evaluate.failed'))(e)
-  }
-},
-
-async handleLayoutAction (action, index) {
-  if (!action || action.kind !== 'workflow') return
-
-  const params = action.params || {}
-  const workflowID = String(params.workflowID || '')
-  const stepID = String(params.stepID || '')
-  const resourceType = params.resourceType || 'compose:record'
-
-  if (!workflowID || !stepID || resourceType !== 'compose:record' || !this.record || !this.module) {
-    this.toastErrorHandler(this.$t('notification:automation.scriptFailed'))(
-      new Error('Invalid record-toolbar workflow action configuration')
-    )
-    return
-  }
-
-  const key = this.layoutActionKey(action, index)
-  if (this.processingLayoutActions.includes(key)) return
-
-  this.processingLayoutActions.push(key)
-
-  try {
-    let ev = {
-      args: {
-        namespace: this.namespace,
-        module: this.module,
-      },
-    }
-    ev = compose.RecordEvent(this.record, ev)
-
-    await this.$AutomationAPI.workflowExec({
-      workflowID,
-      stepID,
-      input: automation.Encode(ev.args),
+      expressions[this.layoutActionKey(action, index)] = visibility
     })
 
-    // Workflow/backend owns business state. Reload the authoritative
-    // record so the toolbar immediately reflects the new state.
-    await this.refresh()
-  } catch (e) {
-    this.toastErrorHandler(this.$t('notification:automation.scriptFailed'))(e)
-  } finally {
-    this.processingLayoutActions = this.processingLayoutActions.filter(k => k !== key)
-  }
-},
+    if (Object.keys(expressions).length === 0) {
+      this.layoutActionVisibility = {}
+      return
+    }
+
+    try {
+      this.layoutActionVisibility = await this.$SystemAPI.expressionEvaluate({
+        variables: this.expressionVariables(),
+        expressions,
+      }) || {}
+    } catch (e) {
+      this.layoutActionVisibility = Object.keys(expressions).reduce((out, key) => {
+        out[key] = false
+        return out
+      }, {})
+      this.toastErrorHandler(this.$t('notification:evaluate.failed'))(e)
+    }
+  },
+
+  async handleLayoutAction (action, index) {
+    if (!action || action.kind !== 'workflow') return
+
+    const params = action.params || {}
+    const workflowID = String(params.workflowID || '')
+    const stepID = String(params.stepID || '')
+    const resourceType = params.resourceType || 'compose:record'
+
+    if (!workflowID || !stepID || resourceType !== 'compose:record' || !this.record || !this.module) {
+      this.toastErrorHandler(this.$t('notification:automation.scriptFailed'))(
+        new Error('Invalid record-toolbar workflow action configuration')
+      )
+      return
+    }
+
+    const key = this.layoutActionKey(action, index)
+    if (this.processingLayoutActions.includes(key)) return
+
+    this.processingLayoutActions.push(key)
+
+    try {
+      let ev = {
+        args: {
+          namespace: this.namespace,
+          module: this.module,
+        },
+      }
+      ev = compose.RecordEvent(this.record, ev)
+
+      await this.$AutomationAPI.workflowExec({
+        workflowID,
+        stepID,
+        input: automation.Encode(ev.args),
+      })
+
+      // Workflow/backend owns business state. Reload the authoritative
+      // record so the toolbar immediately reflects the new state.
+      await this.refresh()
+    } catch (e) {
+      this.toastErrorHandler(this.$t('notification:automation.scriptFailed'))(e)
+    } finally {
+      this.processingLayoutActions = this.processingLayoutActions.filter(k => k !== key)
+    }
+  },
 
     generateActionLink (action) {
       const { kind, params = {} } = action
