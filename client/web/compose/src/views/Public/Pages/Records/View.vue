@@ -843,7 +843,7 @@ export default {
 
       if (!workflowID || !stepID || resourceType !== 'compose:record' || !this.record || !this.module) {
         this.toastErrorHandler(this.$t('notification:automation.scriptFailed'))(
-          new Error('Invalid record-toolbar workflow action configuration')
+          new Error('Invalid record-toolbar workflow action configuration'),
         )
         return
       }
