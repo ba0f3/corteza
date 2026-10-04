@@ -19,6 +19,21 @@ jobs:
           ref: fix/workflow-toolbar-actions
           fetch-depth: 2
 
+      - name: Fix lint issue
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('client/web/compose/src/views/Public/Pages/Records/View.vue')
+          s = p.read_text(encoding='utf-8')
+          old = "          new Error('Invalid record-toolbar workflow action configuration')\n        )"
+          new = "          new Error('Invalid record-toolbar workflow action configuration'),\n        )"
+          if s.count(old) != 1:
+              raise SystemExit(f'expected exact lint marker once, found {s.count(old)}')
+          p.write_text(s.replace(old, new), encoding='utf-8')
+          PY
+          git diff --check
+
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
@@ -36,11 +51,12 @@ jobs:
         working-directory: client/web/compose
         run: yarn eslint src/views/Public/Pages/Records/View.vue
 
-      - name: Remove bootstrap workflow after successful lint
+      - name: Commit fix and remove bootstrap workflow
         shell: bash
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git rm .github/workflows/lint-workflow-toolbar.yml
-          git commit -m "chore: complete workflow toolbar lint"
+          git add client/web/compose/src/views/Public/Pages/Records/View.vue
+          git commit -m "fix(compose): satisfy workflow toolbar lint"
           git push origin HEAD:fix/workflow-toolbar-actions
