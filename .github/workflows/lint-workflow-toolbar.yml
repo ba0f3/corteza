@@ -1,0 +1,46 @@
+name: Lint workflow toolbar patch
+
+on:
+  push:
+    branches:
+      - fix/workflow-toolbar-actions
+    paths:
+      - .github/workflows/lint-workflow-toolbar.yml
+
+permissions:
+  contents: write
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/workflow-toolbar-actions
+          fetch-depth: 2
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: yarn
+          cache-dependency-path: client/web/compose/yarn.lock
+
+      - name: Install Yarn 1
+        run: npm install --global yarn@1.22.22
+
+      - name: Install Compose dependencies
+        working-directory: client/web/compose
+        run: yarn install --frozen-lockfile --non-interactive --no-progress
+
+      - name: Lint patched record view
+        working-directory: client/web/compose
+        run: yarn eslint src/views/Public/Pages/Records/View.vue
+
+      - name: Remove bootstrap workflow after successful lint
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/lint-workflow-toolbar.yml
+          git commit -m "chore: complete workflow toolbar lint"
+          git push origin HEAD:fix/workflow-toolbar-actions
