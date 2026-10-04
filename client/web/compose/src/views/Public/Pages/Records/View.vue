@@ -137,12 +137,13 @@
             v-for="(action, index) in layoutActions.filter(a => a.placement === 'start')"
             :key="index"
             :variant="action.meta.style.variant"
-            :disabled="processing"
+            :disabled="processing || isLayoutActionProcessing(action, index)"
             size="lg"
             class="text-nowrap"
             :to="generateActionLink(action)"
             :href="generateActionHref(action)"
             :target="generateActionTarget(action)"
+            @click="handleLayoutAction(action, index)"
           >
             {{ action.meta.label }}
           </b-button>
@@ -153,12 +154,13 @@
             v-for="(action, index) in layoutActions.filter(a => a.placement === 'center')"
             :key="index"
             :variant="action.meta.style.variant"
-            :disabled="processing"
+            :disabled="processing || isLayoutActionProcessing(action, index)"
             size="lg"
             class="text-nowrap"
             :to="generateActionLink(action)"
             :href="generateActionHref(action)"
             :target="generateActionTarget(action)"
+            @click="handleLayoutAction(action, index)"
           >
             {{ action.meta.label }}
           </b-button>
@@ -169,12 +171,13 @@
             v-for="(action, index) in layoutActions.filter(a => a.placement === 'end')"
             :key="index"
             :variant="action.meta.style.variant"
-            :disabled="processing"
+            :disabled="processing || isLayoutActionProcessing(action, index)"
             size="lg"
             class="text-nowrap"
             :to="generateActionLink(action)"
             :href="generateActionHref(action)"
             :target="generateActionTarget(action)"
+            @click="handleLayoutAction(action, index)"
           >
             {{ action.meta.label }}
           </b-button>
@@ -192,7 +195,7 @@ import Grid from 'corteza-webapp-compose/src/components/Public/Page/Grid'
 import RecordToolbar from 'corteza-webapp-compose/src/components/Common/RecordToolbar'
 import record from 'corteza-webapp-compose/src/mixins/record'
 import page from 'corteza-webapp-compose/src/mixins/page'
-import { compose, system, NoID } from '@cortezaproject/corteza-js'
+import { automation, compose, system, NoID } from '@cortezaproject/corteza-js'
 import { evaluatePrefilter } from 'corteza-webapp-compose/src/lib/record-filter'
 
 export default {
@@ -280,6 +283,9 @@ export default {
 
       loadingRecord: false,
 
+      layoutActionVisibility: {},
+      processingLayoutActions: [],
+
       // Used to identify, load, and delete the correct draft
       activeDraftKey: null,
     }
@@ -337,7 +343,14 @@ export default {
       const { config = {} } = this.layout || {}
       const { actions = [] } = config
 
-      return actions.filter(({ enabled }) => enabled)
+      return actions.filter((action, index) => {
+        if (!action.enabled) return false
+
+        const visibility = String(((action.params || {}).visibility) || '').trim()
+        if (!visibility) return true
+
+        return this.layoutActionVisibility[this.layoutActionKey(action, index)] === true
+      })
     },
 
     title () {
@@ -427,6 +440,8 @@ export default {
               if (blocks) {
                 this.blocks = blocks
               }
+
+              return this.evaluateLayoutActionExpressions()
             })
             .finally(() => {
               this.processing = false
@@ -503,6 +518,7 @@ export default {
 
     evaluateLayoutConditions () {
       this.evaluateBlocks()
+      this.evaluateLayoutActionExpressions()
     },
 
     async loadRecord (recordID = this.recordID) {
@@ -763,7 +779,9 @@ export default {
           this.record = this.tempRecord
           this.initialRecordState = this.record.clone()
 
-          this.getRecordDraft()
+          return this.evaluateLayoutActionExpressions().then(() => {
+            this.getRecordDraft()
+          })
         })
       }).finally(() => {
         this.tempRecord = undefined
@@ -772,6 +790,92 @@ export default {
         this.loading = false
         this.loadingRecord = false
       })
+    },
+
+    layoutActionKey (action, index) {
+      const actionID = String((action || {}).actionID || '')
+      return actionID && actionID !== NoID ? actionID : String(index)
+    },
+
+    isLayoutActionProcessing (action, index) {
+      return this.processingLayoutActions.includes(this.layoutActionKey(action, index))
+    },
+
+    async evaluateLayoutActionExpressions () {
+      const actions = (((this.layout || {}).config || {}).actions || [])
+      const expressions = {}
+
+      actions.forEach((action, index) => {
+        if (!action.enabled) return
+
+        const visibility = String(((action.params || {}).visibility) || '').trim()
+        if (!visibility) return
+
+        expressions[this.layoutActionKey(action, index)] = visibility
+      })
+
+      if (Object.keys(expressions).length === 0) {
+        this.layoutActionVisibility = {}
+        return
+      }
+
+      try {
+        this.layoutActionVisibility = await this.$SystemAPI.expressionEvaluate({
+          variables: this.expressionVariables(),
+          expressions,
+        }) || {}
+      } catch (e) {
+        this.layoutActionVisibility = Object.keys(expressions).reduce((out, key) => {
+          out[key] = false
+          return out
+        }, {})
+        this.toastErrorHandler(this.$t('notification:evaluate.failed'))(e)
+      }
+    },
+
+    async handleLayoutAction (action, index) {
+      if (!action || action.kind !== 'workflow') return
+
+      const params = action.params || {}
+      const workflowID = String(params.workflowID || '')
+      const stepID = String(params.stepID || '')
+      const resourceType = params.resourceType || 'compose:record'
+
+      if (!workflowID || !stepID || resourceType !== 'compose:record' || !this.record || !this.module) {
+        this.toastErrorHandler(this.$t('notification:automation.scriptFailed'))(
+          new Error('Invalid record-toolbar workflow action configuration'),
+        )
+        return
+      }
+
+      const key = this.layoutActionKey(action, index)
+      if (this.processingLayoutActions.includes(key)) return
+
+      this.processingLayoutActions.push(key)
+
+      try {
+        let ev = {
+          args: {
+            namespace: this.namespace,
+            module: this.module,
+          },
+        }
+        ev = compose.RecordEvent(this.record, ev)
+
+        await this.$AutomationAPI.workflowExec({
+          workflowID,
+          stepID,
+          input: automation.Encode(ev.args),
+        })
+
+        // Workflow/backend owns business state. Reload the authoritative
+        // record so the toolbar immediately reflects the new state.
+        await this.refresh()
+      } catch (e) {
+        this.toastErrorHandler(this.$t('notification:automation.scriptFailed'))(e)
+      } finally {
+        this.processingLayoutActions = this.processingLayoutActions.filter(k => k !== key)
+      }
     },
 
     generateActionLink (action) {
@@ -834,6 +938,8 @@ export default {
       }
       this.abortableRequests = []
       this.loadingRecord = false
+      this.layoutActionVisibility = {}
+      this.processingLayoutActions = []
     },
 
     abortRequests () {
