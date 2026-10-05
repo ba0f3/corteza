@@ -88,6 +88,7 @@
 import { mapGetters, mapActions } from 'vuex'
 import Draggable from 'vuedraggable'
 import { url, components } from '@cortezaproject/corteza-vue'
+import { selectPortalApps } from '../lib/portal-apps'
 const { CInputSearch } = components
 
 export default {
@@ -139,9 +140,11 @@ export default {
 
     filteredApps () {
       const query = (this.query || '').toUpperCase()
+      const apps = selectPortalApps(this.appList, this.canCreateApplication)
+
       return this.query
-        ? this.appList.filter(({ name }) => (name.toUpperCase()).includes(query))
-        : this.appList
+        ? apps.filter(({ name }) => (name.toUpperCase()).includes(query))
+        : apps
     },
   },
 
@@ -171,7 +174,8 @@ export default {
     fetchEffective () {
       this.$SystemAPI.permissionsEffective({ resource: 'application' })
         .then(p => {
-          this.canCreateApplication = p.find(per => per.operation === 'application.create').allow || false
+          const createPermission = p.find(per => per.operation === 'application.create')
+          this.canCreateApplication = createPermission ? createPermission.allow : false
           // this.canPin = p.find(({ resource, operation, allow }) => resource === 'system' && operation === 'application.flag.self').allow
         })
     },
