@@ -199,6 +199,11 @@ func (p *Page) decodeTranslations(tt locale.ResourceTranslationIndex) {
 
 		case "Content":
 			if aux = tt.FindByKey(rpl.Replace(LocaleKeyPagePageBlockBlockIDContentBody.Path)); aux != nil {
+				// Defensive: writing into a nil map would panic and break
+				// the whole list/tree request. Lazily initialize Options.
+				if block.Options == nil {
+					block.Options = map[string]any{}
+				}
 				block.Options["body"] = aux.Msg
 			}
 		}
@@ -209,7 +214,14 @@ func (p *Page) decodeRecordListButtons(tt locale.ResourceTranslationIndex, bb []
 	var aux *locale.ResourceTranslation
 
 	for j, auxBtn := range bb {
-		btn := auxBtn.(map[string]interface{})
+		// Defensive: page rows come from user-edited JSON; a non-map entry
+		// (string, number, nil) in a buttons array would panic the type
+		// assertion and turn the whole list/tree request into a 500 empty
+		// body. Skip the bad entry so the rest of the page still decodes.
+		btn, ok := auxBtn.(map[string]interface{})
+		if !ok {
+			continue
+		}
 
 		buttonID := uint64(0)
 		if aux, ok := btn["buttonID"]; ok {

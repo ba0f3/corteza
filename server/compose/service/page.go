@@ -2,7 +2,9 @@ package service
 
 import (
 	"context"
+	"fmt"
 	"reflect"
+	"runtime/debug"
 
 	"github.com/cortezaproject/corteza/server/compose/service/event"
 	"github.com/cortezaproject/corteza/server/compose/types"
@@ -121,7 +123,19 @@ func (svc page) search(ctx context.Context, filter types.PageFilter) (set types.
 	// For each fetched item, store backend will check if it is valid or not
 	filter.Check = checkPage(ctx, svc.ac)
 
-	err = func() error {
+	err = func() (err error) {
+		// Defensive: a panic in row-scan/decode/translation would otherwise
+		// bubble up to the HTTP middleware and surface as an empty 500 to
+		// the client (no envelope, no body, no NextPage cursor). Convert it
+		// to an error so callers (Find/SearchAll/Tree) get a chance to
+		// retry with a smaller limit or skip the bad row.
+		defer func() {
+			if r := recover(); r != nil {
+				err = fmt.Errorf("compose/page: panic during search (ns=%d limit=%d): %v\n%s",
+					filter.NamespaceID, filter.Limit, r, debug.Stack())
+			}
+		}()
+
 		ns, err = loadNamespace(ctx, svc.store, filter.NamespaceID)
 		if err != nil {
 			return err
