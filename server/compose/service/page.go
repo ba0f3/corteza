@@ -8,6 +8,7 @@ import (
 	"github.com/cortezaproject/corteza/server/compose/types"
 	"github.com/cortezaproject/corteza/server/pkg/actionlog"
 	"github.com/cortezaproject/corteza/server/pkg/errors"
+	"github.com/cortezaproject/corteza/server/pkg/filter"
 	"github.com/cortezaproject/corteza/server/pkg/eventbus"
 	"github.com/cortezaproject/corteza/server/pkg/handle"
 	"github.com/cortezaproject/corteza/server/pkg/label"
@@ -186,12 +187,87 @@ func (svc page) Find(ctx context.Context, filter types.PageFilter) (set types.Pa
 	return svc.search(ctx, filter)
 }
 
+const (
+	minComposePageListLimit = 1
+	maxComposePageListLimit = 4096
+)
+
+// SearchAll returns every page for filter without pageCursor or limit=0 store paging.
+//
+// Some deployments return errors when limit exceeds the row count or when pageCursor
+// is used on the second page. This probes the largest single-request limit that still
+// succeeds, then returns that full set.
+func (svc page) SearchAll(ctx context.Context, filter types.PageFilter) (set types.PageSet, err error) {
+	return svc.searchAllPages(ctx, filter)
+}
+
+func (svc page) searchAllPages(ctx context.Context, base types.PageFilter) (set types.PageSet, err error) {
+	try := func(limit uint) (types.PageSet, error) {
+		f := base
+		p, perr := filter.NewPaging(limit, "")
+		if perr != nil {
+			return nil, perr
+		}
+		f.Paging = p
+		s, _, e := svc.search(ctx, f)
+		return s, e
+	}
+
+	lo := uint(minComposePageListLimit)
+	hi := lo
+	var best types.PageSet
+	var lastErr error
+
+	for hi <= maxComposePageListLimit {
+		s, e := try(hi)
+		if e != nil {
+			lastErr = e
+			break
+		}
+		best = s
+		if len(s) < int(hi) {
+			return s, nil
+		}
+		lo = hi
+		hi *= 2
+	}
+
+	if best == nil {
+		if lastErr != nil {
+			return nil, lastErr
+		}
+		return types.PageSet{}, nil
+	}
+
+	for lo+1 < hi {
+		mid := (lo + hi) / 2
+		s, e := try(mid)
+		if e != nil {
+			hi = mid
+			continue
+		}
+		best = s
+		if len(s) < int(mid) {
+			return s, nil
+		}
+		lo = mid
+	}
+
+	s, e := try(lo)
+	if e != nil {
+		return best, nil
+	}
+	if len(s) < int(lo) {
+		return s, nil
+	}
+	return s, nil
+}
+
 func (svc page) Tree(ctx context.Context, namespaceID uint64) (tree types.PageSet, err error) {
 	var (
 		pages  types.PageSet
 		filter = types.PageFilter{
 			NamespaceID: namespaceID,
-			Check:       checkPage(ctx, svc.ac),
 		}
 	)
 
@@ -199,7 +275,7 @@ func (svc page) Tree(ctx context.Context, namespaceID uint64) (tree types.PageSe
 		return
 	}
 
-	if pages, _, err = svc.search(ctx, filter); err != nil {
+	if pages, err = svc.searchAllPages(ctx, filter); err != nil {
 		return
 	}
 

@@ -41,6 +41,7 @@ type (
 			FindByPageID(ctx context.Context, namespaceID, pageID uint64) (*types.Page, error)
 			FindBySelfID(ctx context.Context, namespaceID, selfID uint64) (pages types.PageSet, f types.PageFilter, err error)
 			Find(ctx context.Context, filter types.PageFilter) (set types.PageSet, f types.PageFilter, err error)
+			SearchAll(ctx context.Context, filter types.PageFilter) (set types.PageSet, err error)
 			Tree(ctx context.Context, namespaceID uint64) (pages types.PageSet, err error)
 
 			Create(ctx context.Context, page *types.Page) (*types.Page, error)
@@ -95,6 +96,11 @@ func (ctrl *Page) List(ctx context.Context, r *request.PageList) (interface{}, e
 
 	if f.Sorting, err = filter.NewSorting(r.Sort); err != nil {
 		return nil, err
+	}
+
+	if r.Limit == 0 && r.PageCursor == "" {
+		set, err := ctrl.page.SearchAll(ctx, f)
+		return ctrl.makeFilterPayload(ctx, set, f, err)
 	}
 
 	set, filter, err := ctrl.page.Find(ctx, f)
@@ -307,13 +313,20 @@ func (ctrl Page) makeTreePayload(ctx context.Context, pp types.PageSet, err erro
 	set := make([]*pagePayload, len(pp))
 
 	for i := range pp {
+		var children types.PageSet
+		if pp[i] != nil {
+			children = pp[i].Children
+			// Children are exposed only via pagePayload.Children to avoid duplicate JSON trees.
+			pp[i].Children = nil
+		}
+
 		set[i], err = ctrl.makePayload(ctx, pp[i], nil)
 		if err != nil {
 			return nil, err
 		}
 
-		if len(pp[i].Children) > 0 {
-			set[i].Children, err = ctrl.makeTreePayload(ctx, pp[i].Children, nil)
+		if len(children) > 0 {
+			set[i].Children, err = ctrl.makeTreePayload(ctx, children, nil)
 			if err != nil {
 				return nil, err
 			}
