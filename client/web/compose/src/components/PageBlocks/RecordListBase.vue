@@ -1372,7 +1372,8 @@ export default {
     },
 
     authUserRoles () {
-      return this.$auth.user.roles
+      const user = this.$auth.user || {}
+      return user.roles || []
     },
 
     selectedRecordsDisplayText () {

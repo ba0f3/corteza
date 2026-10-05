@@ -80,6 +80,10 @@ export default {
       popModalPreviousPage: 'ui/popModalPreviousPage',
     }),
 
+    userRoleIDs () {
+      return (this.$auth.user && this.$auth.user.roles) || []
+    },
+
     expressionVariables () {
       const record = this.tempRecord || this.record
 
@@ -108,7 +112,7 @@ export default {
 
       this.layouts.forEach(layout => {
         const { config = {} } = layout
-        if (!config.visibility.expression) return
+        if (!(config.visibility || {}).expression) return
 
         variables.layout = layout
 
@@ -131,7 +135,7 @@ export default {
       let expressions = {}
 
       // Only evaluate if one of the layouts has an expressions variable
-      if (this.layouts.some(({ config = {} }) => config.visibility.expression)) {
+      if (this.layouts.some(({ config = {} }) => (config.visibility || {}).expression)) {
         expressions = await this.evaluateLayoutExpressions()
       }
 
@@ -139,13 +143,13 @@ export default {
       const matchedLayout = this.layouts.find(l => {
         if (pageLayoutID && l.pageLayoutID !== pageLayoutID) return false
 
-        const { expression, roles = [] } = l.config.visibility
+        const { expression, roles = [] } = (l.config.visibility || {})
 
         if (expression && !expressions[l.pageLayoutID]) return false
 
         if (!roles.length) return true
 
-        return this.$auth.user.roles.some(roleID => roles.includes(roleID))
+        return this.userRoleIDs().some(roleID => roles.includes(roleID))
       })
 
       if (!matchedLayout) {
@@ -231,7 +235,7 @@ export default {
 
         // Determine if block should be shown based on expression and roles
         const validExpression = !visibility.expression || layoutBlocksExpressions[blockID]
-        const validRole = !roles.length || this.$auth.user.roles.some(roleID => roles.includes(roleID))
+        const validRole = !roles.length || this.userRoleIDs().some(roleID => roles.includes(roleID))
         const showBlock = block && validExpression && validRole
 
         // Update invisible status based on visibility evaluation
