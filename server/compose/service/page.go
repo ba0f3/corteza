@@ -202,65 +202,34 @@ func (svc page) SearchAll(ctx context.Context, filter types.PageFilter) (set typ
 }
 
 func (svc page) searchAllPages(ctx context.Context, base types.PageFilter) (set types.PageSet, err error) {
-	try := func(limit uint) (types.PageSet, error) {
+	var best types.PageSet
+
+	for limit := uint(minComposePageListLimit); limit <= maxComposePageListLimit; limit++ {
 		f := base
 		p, perr := filter.NewPaging(limit, "")
 		if perr != nil {
-			return nil, perr
+			return best, perr
 		}
 		f.Paging = p
+
 		s, _, e := svc.search(ctx, f)
-		return s, e
-	}
-
-	lo := uint(minComposePageListLimit)
-	hi := lo
-	var best types.PageSet
-	var lastErr error
-
-	for hi <= maxComposePageListLimit {
-		s, e := try(hi)
 		if e != nil {
-			lastErr = e
-			break
+			if len(best) > 0 {
+				return best, nil
+			}
+			return nil, e
 		}
+
 		best = s
-		if len(s) < int(hi) {
+		if len(s) < int(limit) {
 			return s, nil
 		}
-		lo = hi
-		hi *= 2
 	}
 
-	if best == nil {
-		if lastErr != nil {
-			return nil, lastErr
-		}
-		return types.PageSet{}, nil
-	}
-
-	for lo+1 < hi {
-		mid := (lo + hi) / 2
-		s, e := try(mid)
-		if e != nil {
-			hi = mid
-			continue
-		}
-		best = s
-		if len(s) < int(mid) {
-			return s, nil
-		}
-		lo = mid
-	}
-
-	s, e := try(lo)
-	if e != nil {
+	if len(best) > 0 {
 		return best, nil
 	}
-	if len(s) < int(lo) {
-		return s, nil
-	}
-	return s, nil
+	return types.PageSet{}, nil
 }
 
 func (svc page) Tree(ctx context.Context, namespaceID uint64) (tree types.PageSet, err error) {

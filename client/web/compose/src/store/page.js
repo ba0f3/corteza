@@ -1,5 +1,6 @@
 import { compose } from '@cortezaproject/corteza-js'
 import * as request from '../lib/request'
+import { fetchAllComposePages } from '../lib/pages'
 
 const types = {
   loading: 'loading',
@@ -56,7 +57,7 @@ export default function (ComposeAPI) {
 
         commit(types.loading)
         commit(types.pending)
-        return ComposeAPI.pageList({ namespaceID, sort: 'weight ASC' }).then(({ set, filter }) => {
+        return fetchAllComposePages(ComposeAPI, namespaceID).then((set) => {
           if (set && set.length > 0) {
             commit(types.updateSet, set.map(p => new compose.Page(p)))
           }

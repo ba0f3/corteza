@@ -112,6 +112,7 @@ import axios from 'axios'
 import { mapActions } from 'vuex'
 import PageTree from 'corteza-webapp-compose/src/components/Admin/Page/Tree'
 import { compose } from '@cortezaproject/corteza-js'
+import { buildPageTreeFromSet, fetchAllComposePages } from 'corteza-webapp-compose/src/lib/pages'
 
 export default {
   i18nOptions: {
@@ -169,15 +170,12 @@ export default {
 
       const { namespaceID } = this.namespace
 
-      const { response, cancel } = this.$ComposeAPI
-        .pageTreeCancellable({ namespaceID })
-
-      this.abortableRequests.push(cancel)
-
-      response()
-        .then((tree) => {
+      fetchAllComposePages(this.$ComposeAPI, namespaceID)
+        .then((set) => {
+          const tree = buildPageTreeFromSet(set || [])
           this.tree = tree.map(p => new compose.Page(p))
-        }).catch((e) => {
+        })
+        .catch((e) => {
           if (!axios.isCancel(e)) {
             this.toastErrorHandler(this.$t('notification:page.listFailed'))(e)
           }
