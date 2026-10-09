@@ -273,6 +273,14 @@ var (
 				return exp.NewSQLFunctionExpression("COUNT", arg)
 			},
 		},
+		"hrm_remaining": {
+			HandlerE: func(a ...exp.Expression) (exp.Expression, error) {
+				if len(a) != 8 {
+					return nil, fmt.Errorf("hrm_remaining requires eight arguments")
+				}
+				return exp.NewLiteralExpression("(COALESCE(?, 0) + COALESCE(?, 0) - COALESCE(?, 0) - COALESCE(?, 0) + CASE WHEN ? IS NULL OR ? >= ? THEN COALESCE(?, 0) ELSE COALESCE(?, 0) END)", a[0], a[1], a[2], a[3], a[6], a[6], a[7], a[4], a[5]), nil
+			},
+		},
 		"sum": {
 			Handler: func(args ...exp.Expression) exp.Expression {
 				return exp.NewSQLFunctionExpression("SUM", args[0])

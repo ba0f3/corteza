@@ -2434,6 +2434,8 @@ func ComposeRecordFilterAC(ctx context.Context, ac recordValueAccessController, 
 		readableFields[f.Name] = ac.CanReadRecordValueOnModuleField(ctx, f)
 	}
 
+	// HRM remaining read projection
+	hrmRemainingRead(m, time.Now(), rr...)
 	for _, r := range rr {
 		r.Values, _ = r.Values.Filter(func(v *types.RecordValue) (bool, error) {
 			return readableFields[v.Name], nil
@@ -2520,6 +2522,9 @@ func recordReportToDalPipeline(m *types.Module, metrics, dimensions, f string) (
 		}
 	}
 
+	if err = hrmRemainingReport(m, time.Now(), mms); err != nil {
+		return nil, nil, err
+	}
 	agg := &dal.Aggregate{
 		Ident:         "agg",
 		RelSource:     "ds",
