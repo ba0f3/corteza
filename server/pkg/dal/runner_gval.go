@@ -183,16 +183,6 @@ var (
 		// }
 
 		// - filtering
-		"hrm_remaining": {
-			Handler: func(a ...string) string {
-				if len(a) != 8 {
-					return "hrm_remaining_requires_eight_arguments()"
-				}
-				num := func(s string) string { return "(" + s + " == null ? 0 : " + s + ")" }
-				return "(" + num(a[0]) + "+" + num(a[1]) + "-" + num(a[2]) + "-" + num(a[3]) + "+(" + a[6] + " == null || strftime(" + a[6] + ", \"%Y-%m-%d\") >= " + a[7] + " ? " + num(a[4]) + " : " + num(a[5]) + "))"
-			},
-			OutType: &TypeNumber{},
-		},
 		"now": {
 			Handler: func(args ...string) string {
 				return "now()"
@@ -348,9 +338,8 @@ func newRunnerGvalParsed(n *ql.ASTNode) (out *runnerGval, err error) {
 // used in the pipeline.
 //
 // @note the subset is limited to simplify the (eventual) offloading to the DB.
-//
-//	At some point, more functions will be supported, and the ones which can't
-//	be offloaded will be performed in some exec. step.
+//       At some point, more functions will be supported, and the ones which can't
+//       be offloaded will be performed in some exec. step.
 func newGval(e string) (gval.Evaluable, error) {
 	return gval.Full(
 		// Extra functions we'll need
@@ -455,10 +444,9 @@ func (c converterGval) refHandler(n *ql.ASTNode, args ...string) (out string, er
 // the first argument
 //
 // @todo this is needed because how the ValueGetters returns multi-value fields so
-//
-//	an edge case where a field would have [a] but here, it would be presented
-//	as a.
-//	This would become obsolete when we address the actual issue.
+//       an edge case where a field would have [a] but here, it would be presented
+//       as a.
+//       This would become obsolete when we address the actual issue.
 func arrHas(arr interface{}, vv ...interface{}) (b bool, err error) {
 	arr = expr.UntypedValue(arr)
 

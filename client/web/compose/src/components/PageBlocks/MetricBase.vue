@@ -43,6 +43,7 @@
 
 <script>
 import base from './base'
+import { isBalanceReport, queryBalanceReport } from 'corteza-webapp-compose/src/lib/leave-balance-display'
 import numeral from 'numeral'
 import moment from 'moment'
 import { debounce } from 'lodash'
@@ -163,7 +164,11 @@ export default {
       try {
         const rtr = []
         const namespaceID = this.namespace.namespaceID
-        const reporter = r => {
+        const reporter = async r => {
+          const module = this.$store.getters['module/getByID'](r.moduleID) || await this.$store.dispatch('module/findByID', { namespace: this.namespace, moduleID: r.moduleID })
+          if (isBalanceReport(module, r)) {
+            return queryBalanceReport(this.$ComposeAPI, namespaceID, module, r, cancel => this.abortableRequests.push(cancel))
+          }
           const { response, cancel } = this.$ComposeAPI
             .recordReportCancellable({ ...r, namespaceID })
 

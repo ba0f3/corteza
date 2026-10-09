@@ -130,6 +130,7 @@
 <script>
 import { mapActions } from 'vuex'
 import base from './base'
+import { isBalanceReport, queryBalanceReport } from 'corteza-webapp-compose/src/lib/leave-balance-display'
 import ChartComponent from '../Chart'
 import { NoID, compose } from '@cortezaproject/corteza-js'
 import { evaluatePrefilter, isFieldInFilter } from 'corteza-webapp-compose/src/lib/record-filter'
@@ -284,7 +285,7 @@ export default {
       }).catch(this.toastErrorHandler(this.$t('notification:chart.loadFailed')))
     },
 
-    reporter (r = {}) {
+    async reporter (r = {}) {
       if (!this.originalFilter) {
         this.originalFilter = r.filter
         this.filter = r
@@ -312,6 +313,10 @@ export default {
 
       const { namespaceID } = this.namespace
 
+      const module = this.$store.getters['module/getByID'](r.moduleID) || await this.$store.dispatch('module/findByID', { namespace: this.namespace, moduleID: r.moduleID })
+      if (isBalanceReport(module, r)) {
+        return queryBalanceReport(this.$ComposeAPI, namespaceID, module, { ...r, filter })
+      }
       return this.$ComposeAPI.recordReport({ namespaceID, ...r, filter })
     },
 

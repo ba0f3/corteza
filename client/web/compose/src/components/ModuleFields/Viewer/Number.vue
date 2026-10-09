@@ -27,6 +27,7 @@
 
 <script>
 import base from './base'
+import { isBalance, assertReadable, remaining } from 'corteza-webapp-compose/src/lib/leave-balance-display'
 import { components } from '@cortezaproject/corteza-vue'
 const { CProgress } = components
 
@@ -39,11 +40,20 @@ export default {
 
   computed: {
     formatted () {
-      if (this.value === undefined) {
+      let display = this.value
+      if (this.field.name === 'remaining' && isBalance(this.record.module)) {
+        try {
+          assertReadable(this.record.module)
+          display = String(remaining(this.record.values))
+        } catch (e) {
+          return e.message
+        }
+      }
+      if (display === undefined) {
         return this.field.options.display === 'number' ? undefined : [this.field.options.min]
       }
 
-      const value = this.field.isMulti ? this.value : [this.value]
+      const value = this.field.isMulti ? display : [display]
 
       if (this.field.options.display === 'number') {
         return value.map(v => this.field.formatValue(v)).join(this.field.options.multiDelimiter)
